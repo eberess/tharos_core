@@ -7,8 +7,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock ./
-RUN pip install --no-cache-dir uv && uv sync --frozen
-
 COPY src/ src/
 
-ENTRYPOINT ["python", "-m", "tharos.cli"]
+RUN pip install --no-cache-dir uv && uv sync --frozen
+
+ENV PATH="/app/.venv/bin:${PATH}"
+
+EXPOSE 8000
+
+CMD ["python", "-m", "tharos.cli"]
