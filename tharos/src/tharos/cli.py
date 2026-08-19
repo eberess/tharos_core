@@ -1,5 +1,6 @@
 """Point d'entree CLI de Tharos Core."""
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -9,14 +10,17 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.tree import Tree
 
+from tharos.agents.translator import CodeTranslatorAgent
 from tharos.graph.builder import DependencyGraphBuilder
 from tharos.parsers.windev import WinDevParser
 
 app = typer.Typer(name="tharos", help="Tharos Core — Moteur de Migration WinDev")
 parse_app = typer.Typer(help="Outils de parsing de fichiers legacy")
 graph_app = typer.Typer(help="Analyse des dependances")
+translate_app = typer.Typer(help="Traduction de code legacy vers Python")
 app.add_typer(parse_app, name="parse")
 app.add_typer(graph_app, name="graph")
+app.add_typer(translate_app, name="translate")
 
 console = Console()
 
@@ -198,6 +202,84 @@ def graph_windev(
     if output:
         builder.save_json(output)
         console.print(f"\n[bold green]Graphe sauvegarde dans :[/] {output}")
+
+
+@translate_app.command("windev")
+def translate_windev(
+    filepath: Annotated[
+        Path,
+        typer.Argument(
+            help="Chemin vers le fichier WinDev (.wdw, .wdg, .wda)",
+            exists=True,
+            dir_okay=False,
+        ),
+    ],
+    proc_name: Annotated[
+        str,
+        typer.Option("--proc", "-p", help="Nom de la procedure a traduire"),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Sauvegarder le code genere dans un fichier"),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", "-j", help="Sortie brute en JSON")
+    ] = False,
+) -> None:
+    """Traduit une procedure WinDev vers Python via LLM."""
+    parser = WinDevParser()
+    ast = parser.parse_file(filepath)
+
+    proc = next((p for p in ast.procedures if p.name == proc_name), None)
+    if proc is None:
+        console.print(f"[bold red]Procedure '{proc_name}' non trouvee.[/]")
+        available = [p.name for p in ast.procedures]
+        console.print(f"[dim]Procedures disponibles : {', '.join(available)}[/]")
+        raise typer.Exit(1)
+
+    agent = CodeTranslatorAgent()
+    result = agent.translate_procedure_with_graph(proc, ast)
+
+    if json_output:
+        console.print_json(
+            json.dumps(
+                {
+                    "source_proc": result.source_proc,
+                    "is_valid": result.is_valid,
+                    "provider": result.provider,
+                    "model": result.model,
+                    "generated_code": result.generated_code,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    status = "[bold green]VALIDE[/]" if result.is_valid else "[bold red]INVALIDE[/]"
+    console.print(
+        Panel(
+            f"[bold cyan]Procedure :[/] {result.source_proc}\n"
+            f"[bold cyan]Fournisseur :[/] {result.provider}\n"
+            f"[bold cyan]Modele :[/] {result.model}\n"
+            f"[bold cyan]Syntaxe :[/] {status}",
+            title="Tharos Translate — Resultat",
+            border_style="bright_magenta",
+        )
+    )
+
+    console.print(
+        Panel(
+            result.generated_code,
+            title="Code Genere",
+            border_style="bright_cyan",
+            padding=(1, 2),
+        )
+    )
+
+    if output:
+        output.write_text(result.generated_code, encoding="utf-8")
+        console.print(f"\n[bold green]Code sauvegarde dans :[/] {output}")
 
 
 if __name__ == "__main__":
