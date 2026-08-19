@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.tree import Tree
 
-from tharos.agents.translator import CodeTranslatorAgent
+from tharos.agents.translator import CodeTranslatorAgent, translate_with_retry
 from tharos.graph.builder import DependencyGraphBuilder
 from tharos.parsers.windev import WinDevParser
 
@@ -18,9 +18,11 @@ app = typer.Typer(name="tharos", help="Tharos Core — Moteur de Migration WinDe
 parse_app = typer.Typer(help="Outils de parsing de fichiers legacy")
 graph_app = typer.Typer(help="Analyse des dependances")
 translate_app = typer.Typer(help="Traduction de code legacy vers Python")
+pipeline_app = typer.Typer(help="Pipeline complet de migration")
 app.add_typer(parse_app, name="parse")
 app.add_typer(graph_app, name="graph")
 app.add_typer(translate_app, name="translate")
+app.add_typer(pipeline_app, name="pipeline")
 
 console = Console()
 
@@ -279,6 +281,101 @@ def translate_windev(
 
     if output:
         output.write_text(result.generated_code, encoding="utf-8")
+        console.print(f"\n[bold green]Code sauvegarde dans :[/] {output}")
+
+
+@pipeline_app.command("windev")
+def pipeline_windev(
+    filepath: Annotated[
+        Path,
+        typer.Argument(
+            help="Chemin vers le fichier WinDev (.wdw, .wdg, .wda)",
+            exists=True,
+            dir_okay=False,
+        ),
+    ],
+    proc_name: Annotated[
+        str,
+        typer.Option("--proc", "-p", help="Nom de la procedure a migrer"),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Sauvegarder le code final"),
+    ] = None,
+    max_attempts: Annotated[
+        int, typer.Option("--attempts", "-n", help="Nombre max de tentatives")
+    ] = 3,
+) -> None:
+    """Pipeline complet : AST -> Graphe -> Agent -> Sandbox -> Auto-correction."""
+    parser = WinDevParser()
+    ast = parser.parse_file(filepath)
+
+    proc = next((p for p in ast.procedures if p.name == proc_name), None)
+    if proc is None:
+        console.print(f"[bold red]Procedure '{proc_name}' non trouvee.[/]")
+        available = [p.name for p in ast.procedures]
+        console.print(f"[dim]Procedures disponibles : {', '.join(available)}[/]")
+        raise typer.Exit(1)
+
+    builder = DependencyGraphBuilder(ast)
+    graph = builder.build()
+
+    console.print(
+        Panel(
+            f"[bold cyan]Fichier :[/] {ast.filename}\n"
+            f"[bold cyan]Procedure :[/] {proc_name}\n"
+            f"[bold cyan]Noeuds graphe :[/] {graph.number_of_nodes()}\n"
+            f"[bold cyan]Aretes graphe :[/] {graph.number_of_edges()}\n"
+            f"[bold cyan]Max tentatives :[/] {max_attempts}",
+            title="Tharos Pipeline — Lancement",
+            border_style="bright_yellow",
+        )
+    )
+
+    with console.status("[bold bright_yellow]Execution du pipeline...[/]"):
+        result = translate_with_retry(proc, ast, max_attempts=max_attempts)
+
+    for record in result.history:
+        icon = "[bold green]PASS[/]" if record.passed else "[bold red]FAIL[/]"
+        console.print(
+            f"  Tentative {record.attempt}/{max_attempts} : {icon} "
+            f"(exit {record.exit_code})"
+        )
+        if not record.passed and record.logs:
+            preview = record.logs.strip().splitlines()[-3:]
+            for line in preview:
+                console.print(f"    [dim]{line}[/]")
+
+    if result.success:
+        console.print(
+            Panel(
+                f"[bold green]SUCCES[/] en {result.attempts} tentative(s)\n"
+                f"[bold cyan]Code final genere avec succes.[/]",
+                title="Tharos Pipeline — Resultat",
+                border_style="bright_green",
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                f"[bold red]ECHEC[/] apres {result.attempts} tentative(s)\n"
+                f"[dim]Dernier traceback :[/]\n{result.history[-1].logs[-500:]}",
+                title="Tharos Pipeline — Resultat",
+                border_style="bright_red",
+            )
+        )
+
+    console.print(
+        Panel(
+            result.final_code,
+            title="Code Final",
+            border_style="bright_cyan",
+            padding=(1, 2),
+        )
+    )
+
+    if output:
+        output.write_text(result.final_code, encoding="utf-8")
         console.print(f"\n[bold green]Code sauvegarde dans :[/] {output}")
 
 

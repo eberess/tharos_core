@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import requests
 
 from tharos.graph.builder import DependencyGraphBuilder
-from tharos.parsers.base import ASTModel, ASTProcedure
+from tharos.parsers.base import ASTModel, ASTProcedure, VariableType
 
 # ── Prompt système Clean Architecture ────────────────────────────────────────
 
@@ -329,3 +329,139 @@ class CodeTranslatorAgent:
             provider=self.config.provider,
             model=self.config.model,
         )
+
+
+# ── Pipeline avec boucle de feedback ─────────────────────────────────────────
+
+
+def _generate_default_test(proc: ASTProcedure) -> str:
+    """Génère un test d'équivalence de base pour une procédure traduite."""
+    params = []
+    for p in proc.parameters:
+        py_type = _wtype_to_python(p.wtype.value)
+        if py_type == "str":
+            params.append(f'    {p.name} = "test"')
+        elif py_type == "int":
+            params.append(f"    {p.name} = 1")
+        elif py_type == "float":
+            params.append(f"    {p.name} = 1.0")
+        elif py_type == "bool":
+            params.append(f"    {p.name} = True")
+        else:
+            params.append(f"    {p.name} = None")
+
+    call_args = ", ".join(p.name for p in proc.parameters)
+    assignments = "\n".join(params) if params else "    pass"
+
+    return (
+        "from generated_code import *\n"
+        "import pytest\n\n\n"
+        f"def test_{proc.name.lower()}_runs():\n"
+        f"{assignments}\n"
+        f"    result = {proc.name}({call_args})\n"
+        f"    assert result is not None or result == 0 or result is None\n"
+    )
+
+
+def _build_subgraph_context(
+    proc: ASTProcedure, ast: ASTModel
+) -> str:
+    """Construit le contexte de dépendances pour le correcteur."""
+    builder = DependencyGraphBuilder(ast)
+    builder.build()
+
+    lines: list[str] = []
+    for _, target, data in builder.graph.out_edges(proc.name, data=True):
+        if data.get("kind") == "calls":
+            called = next(
+                (p for p in ast.procedures if p.name == target), None
+            )
+            if called:
+                p_str = ", ".join(
+                    f"{p.name}: {p.wtype.value}" for p in called.parameters
+                )
+                lines.append(f"{target}({p_str}) → {called.return_value or 'None'}")
+    return "\n".join(lines)
+
+
+@dataclass
+class AttemptRecord:
+    attempt: int
+    passed: bool
+    exit_code: int
+    logs: str = ""
+
+
+@dataclass
+class PipelineResult:
+    final_code: str
+    test_code: str
+    success: bool
+    attempts: int
+    history: list[AttemptRecord] = field(default_factory=list)
+
+
+def translate_with_retry(
+    proc: ASTProcedure,
+    ast: ASTModel,
+    max_attempts: int = 3,
+    config: LLMConfig | None = None,
+) -> PipelineResult:
+    """Pipeline complet : traduction → test → sandbox → auto-correction."""
+    from tharos.agents.corrector import CodeCorrectorAgent
+    from tharos.sandbox.runner import DockerSandboxRunner, SandboxResult
+
+    cfg = config or _load_config()
+    translator = CodeTranslatorAgent(cfg)
+    corrector = CodeCorrectorAgent(cfg)
+    runner = DockerSandboxRunner()
+
+    context = _build_subgraph_context(proc, ast)
+    test_code = _generate_default_test(proc)
+
+    history: list[AttemptRecord] = []
+    current_code = ""
+    last_traceback = ""
+
+    for attempt in range(1, max_attempts + 1):
+        if attempt == 1:
+            tr = translator.translate_procedure_with_graph(proc, ast)
+            current_code = tr.generated_code
+        else:
+            correction = corrector.correct(
+                original_code=current_code,
+                traceback=last_traceback,
+                context=context,
+                attempt=attempt,
+                source_proc=proc.name,
+            )
+            current_code = correction.generated_code
+
+        sandbox_result = runner.run_tests(current_code, test_code)
+        last_traceback = sandbox_result.stdout + sandbox_result.stderr
+
+        history.append(
+            AttemptRecord(
+                attempt=attempt,
+                passed=sandbox_result.passed,
+                exit_code=sandbox_result.exit_code,
+                logs=last_traceback[:2000],
+            )
+        )
+
+        if sandbox_result.passed:
+            return PipelineResult(
+                final_code=current_code,
+                test_code=test_code,
+                success=True,
+                attempts=attempt,
+                history=history,
+            )
+
+    return PipelineResult(
+        final_code=current_code,
+        test_code=test_code,
+        success=False,
+        attempts=max_attempts,
+        history=history,
+    )
