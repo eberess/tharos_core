@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: ./tharos
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - THAROS_LLM_PROVIDER=ollama
+      - THAROS_LLM_MODEL=qwen2.5-coder:latest
+      - THAROS_LLM_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - tharos-net
+
+  web:
+    build:
+      context: ./tharos-web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    networks:
+      - tharos-net
+
+  sandbox:
+    build:
+      context: ./tharos
+      dockerfile: Dockerfile.sandbox
+    profiles:
+      - test
+    networks:
+      - tharos-net
+
+networks:
+  tharos-net:
+    driver: bridge
