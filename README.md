@@ -8,12 +8,12 @@ Plutôt que d'effectuer une traduction textuelle aveugle, Tharos extrait l'Arbre
 
 ```mermaid
 graph LR
-    A[📂 Fichiers WinDev<br/>.wdw .wdg .wda .fic] --> B[MODULE PARSER<br/>Extraction AST Déterministe]
-    B --> C[MODULE GRAPH<br/>Graphe de Dépendances Fonctionnel]
+    A[Fichiers WinDev<br/>.wdw .wdg .wda .fic] --> B[MODULE PARSER<br/>Extraction AST Deterministe]
+    B --> C[MODULE GRAPH<br/>Graphe de Dependances Fonctionnel]
     C --> D[MODULE AGENTS<br/>Traduction LLM Hybride]
     D --> E[SANDBOX DOCKER<br/>Validation & Tests Pytest]
-    E --> F{✅ Isofonctionnel ?}
-    F -->|Oui| G[📦 Code Cible<br/>FastAPI / React / PostgreSQL]
+    E --> F{Isofonctionnel ?}
+    F -->|Oui| G[Code Cible<br/>FastAPI / React / PostgreSQL]
     F -->|Non| D
 ```
 
