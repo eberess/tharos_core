@@ -7,12 +7,16 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.tree import Tree
 
+from tharos.graph.builder import DependencyGraphBuilder
 from tharos.parsers.windev import WinDevParser
 
 app = typer.Typer(name="tharos", help="Tharos Core — Moteur de Migration WinDev")
 parse_app = typer.Typer(help="Outils de parsing de fichiers legacy")
+graph_app = typer.Typer(help="Analyse des dependances")
 app.add_typer(parse_app, name="parse")
+app.add_typer(graph_app, name="graph")
 
 console = Console()
 
@@ -112,6 +116,88 @@ def parse_windev(
         for c in ast.conditions:
             table.add_row(c.condition_type, c.expression, str(c.line))
         console.print(table)
+
+
+@graph_app.command("windev")
+def graph_windev(
+    filepath: Annotated[
+        Path,
+        typer.Argument(
+            help="Chemin vers le fichier WinDev (.wdw, .wdg, .wda)",
+            exists=True,
+            dir_okay=False,
+        ),
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Sauvegarder le graphe en JSON"),
+    ] = None,
+) -> None:
+    """Genere le graphe de dependances et l'affiche dans le terminal."""
+    parser = WinDevParser()
+    ast = parser.parse_file(filepath)
+
+    builder = DependencyGraphBuilder(ast)
+    graph = builder.build()
+
+    # En-tete
+    n_edges = graph.number_of_edges()
+    n_nodes = graph.number_of_nodes()
+    console.print(
+        Panel(
+            f"[bold cyan]Fichier :[/] {ast.filename}\n"
+            f"[bold cyan]Noeuds  :[/] {n_nodes}\n"
+            f"[bold cyan]Aretes  :[/] {n_edges}",
+            title="Tharos Graph — Dependances",
+            border_style="bright_green",
+        )
+    )
+
+    # Affichage en arbre par procedure
+    for proc in ast.procedures:
+        tree = Tree(f"[bold green]{proc.name}[/]", guide_style="bright_green")
+
+        # Appels vers d'autres procedures
+        calls = [
+            (t, d.get("kind", ""))
+            for _, t, d in graph.out_edges(proc.name, data=True)
+            if d.get("kind") == "calls"
+        ]
+        if calls:
+            calls_branch = tree.add("[bold magenta]Appelle[/]")
+            for target, _ in calls:
+                calls_branch.add(f"[white]{target}[/]")
+
+        # Tables accesseees
+        tables = [
+            (t, d.get("operation", ""))
+            for _, t, d in graph.out_edges(proc.name, data=True)
+            if d.get("kind") == "accesses"
+        ]
+        if tables:
+            tables_branch = tree.add("[bold cyan]Accede aux tables[/]")
+            for target, op in tables:
+                table_name = target.replace("TABLE:", "")
+                tables_branch.add(f"[white]{table_name}[/] [dim]({op})[/]")
+
+        # Variables utilisees
+        vars_used = [
+            (t, d.get("kind", ""))
+            for _, t, d in graph.out_edges(proc.name, data=True)
+            if d.get("kind") == "uses"
+        ]
+        if vars_used:
+            vars_branch = tree.add("[bold yellow]Utilise les variables[/]")
+            for target, _ in vars_used:
+                var_name = target.replace("VAR:", "")
+                vars_branch.add(f"[white]{var_name}[/]")
+
+        console.print(tree)
+
+    # Sauvegarde optionnelle
+    if output:
+        builder.save_json(output)
+        console.print(f"\n[bold green]Graphe sauvegarde dans :[/] {output}")
 
 
 if __name__ == "__main__":

@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir uv && uv sync --frozen --group dev
-
 COPY src/ src/
 COPY tests/ tests/
+
+RUN pip install --no-cache-dir ".[dev]"
 
 ENTRYPOINT ["pytest"]
