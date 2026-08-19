@@ -1,0 +1,21 @@
+services:
+  tharos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./workspace:/workspace
+    environment:
+      - THAROS_LLM_BACKEND=ollama
+      - THAROS_MODEL=qwen2.5-coder:7b
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    volumes:
+      - ./workspace:/workspace
+    profiles:
+      - test
