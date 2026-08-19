@@ -2,7 +2,6 @@
 name = "tharos-core"
 version = "0.1.0"
 description = "Moteur de Migration & Résolution de Dette Technique"
-readme = "README.md"
 license = {text = "Proprietary"}
 requires-python = ">=3.12"
 dependencies = [

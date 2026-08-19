@@ -1,1 +1,114 @@
-// Sample WinDev window file for testing
+// ============================================================
+// Fichier : FacturationClient.wdw
+// Fenêtre WinDev - Gestion de la facturation clients
+// ============================================================
+
+// --- Déclarations globales ---
+sNomClient est une chaîne
+nTotalHT est un monétaire
+nTotalTTC est un monétaire
+dDateFacture est une date
+bFactureValidee est un booléen
+tabLignesFacture est un tableau de structures de la ligne facture
+
+// --- Déclarations locales (procédures) ---
+// Chaque procédure déclare ses propres variables en LOCAL
+
+// --- Procédure : CalculerTVA ---
+// Calcule la TVA à partir du montant HT
+PROCEDURE CalculerTVA(nMontantHT est un monétaire, sCodeTVA est une chaîne) LOCAL
+    nTVA est un monétaire
+    nTauxTVA est un réel
+
+    SI sCodeTVA = "TX20" ALORS
+        nTauxTVA = 0.20
+    SINON SI sCodeTVA = "TX10" ALORS
+        nTauxTVA = 0.10
+    SINON
+        nTauxTVA = 0.00
+    FIN
+
+    nTVA = nMontantHT * nTauxTVA
+    RENVOYER nTVA
+
+// --- Procédure : ValiderFacture ---
+// Vérifie et valide la facture en base
+PROCEDURE ValiderFacture(nNumFacture est un entier) LOCAL
+    sStatut est une chaîne
+
+    SI nNumFacture <= 0 ALORS
+        Erreur("Numéro de facture invalide")
+        RENVOYER FAUX
+    FIN
+
+    // Requête HFSQL : lecture de la facture
+    HExécuteRequêteSQL("SELECT * FROM FACTURE WHERE NUM_FACTURE = " + nNumFacture)
+    HLitPremier(REQ_FACTURE)
+
+    SI HFenDeHorsRequête(REQ_FACTURE) ALORS
+        Erreur("Facture introuvable")
+        RENVOYER FAUX
+    FIN
+
+    sStatut = FACTURE.STATUT
+
+    SI sStatut = "VALIDEE" ALORS
+        Info("Facture déjà validée")
+        RENVOYER FAUX
+    FIN
+
+    // Mise à jour du statut
+    HExécuteRequêteSQL("UPDATE FACTURE SET STATUT = 'VALIDEE', DATE_VALIDATION = SYSTEME.DATEJOUR() WHERE NUM_FACTURE = " + nNumFacture)
+
+    RENVOYER VRAI
+
+// --- Procédure : AjouterLigneFacture ---
+// Ajoute une ligne à la facture en cours
+PROCEDURE AjouterLigneFacture(nNumFacture est un entier, sDesignation est une chaîne, nPrixUnitaire est un monétaire, nQuantite est un entier) LOCAL
+    nMontantLigne est un monétaire
+    nTVA est un monétaire
+
+    nMontantLigne = nPrixUnitaire * nQuantite
+    nTVA = CalculerTVA(nMontantLigne, "TX20")
+
+    // Insertion HFSQL
+    HExécuteRequêteSQL("INSERT INTO LIGNE_FACTURE (NUM_FACTURE, DESIGNATION, PRIX_UNITAIRE, QUANTITE, MONTANT_HT, MONTANT_TVA) VALUES (" +
+        nNumFacture + ", '" + sDesignation + "', " + nPrixUnitaire + ", " + nQuantite + ", " + nMontantLigne + ", " + nTVA + ")")
+
+    Info("Ligne ajoutée avec succès")
+
+// --- Procédure : SupprimerLigneFacture ---
+// Supprime une ligne de facture par son ID
+PROCEDURE SupprimerLigneFacture(nIDLigne est un entier) LOCAL
+    SI nIDLigne <= 0 ALORS
+        Erreur("ID ligne invalide")
+        RENVOYER FAUX
+    FIN
+
+    HExécuteRequêteSQL("DELETE FROM LIGNE_FACTURE WHERE ID_LIGNE = " + nIDLigne)
+    RENVOYER VRAI
+
+// --- Procédure : CalculerTotalFacture ---
+// Recalcul le total HT et TTC de la facture
+PROCEDURE CalculerTotalFacture(nNumFacture est un entier) LOCAL
+    nTotalHTLocal est un monétaire
+    nTotalTTCLocal est un monétaire
+    nTVATotale est un monétaire
+
+    HExécuteRequêteSQL("SELECT SUM(MONTANT_HT) AS TOTAL_HT, SUM(MONTANT_TVA) AS TOTAL_TVA FROM LIGNE_FACTURE WHERE NUM_FACTURE = " + nNumFacture)
+    HLitPremier(REQ_FACTURE)
+
+    SI HFenDeHorsRequête(REQ_FACTURE) ALORS
+        nTotalHTLocal = 0
+        nTVATotale = 0
+    SINON
+        nTotalHTLocal = REQ_FACTURE.TOTAL_HT
+        nTVATotale = REQ_FACTURE.TOTAL_TVA
+    FIN
+
+    nTotalTTCLocal = nTotalHTLocal + nTVATotale
+
+    // Mise à jour de la facture
+    HExécuteRequêteSQL("UPDATE FACTURE SET TOTAL_HT = " + nTotalHTLocal + ", TOTAL_TVA = " + nTVATotale + ", TOTAL_TTC = " + nTotalTTCLocal + " WHERE NUM_FACTURE = " + nNumFacture)
+
+    RENVOYER nTotalTTCLocal
