@@ -3,7 +3,7 @@
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import requests
 
@@ -64,7 +64,7 @@ class LLMConfig:
 def _load_config() -> LLMConfig:
     """Charge la configuration LLM depuis les variables d'environnement."""
     provider = os.getenv("THAROS_LLM_PROVIDER", "ollama")
-    model = os.getenv("THAROS_LLM_MODEL", "qwen2.5-coder:7b")
+    model = os.getenv("THAROS_LLM_MODEL", "qwen2.5-coder:latest")
     base_url = os.getenv("THAROS_LLM_BASE_URL")
     api_key = os.getenv("THAROS_LLM_API_KEY")
     temperature = float(os.getenv("THAROS_LLM_TEMPERATURE", "0.2"))
@@ -90,23 +90,20 @@ def _load_config() -> LLMConfig:
 
 def _call_ollama(config: LLMConfig, prompt: str, system: str) -> str:
     resp = requests.post(
-        f"{config.base_url}/api/chat",
+        f"{config.base_url}/v1/chat/completions",
         json={
             "model": config.model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            "stream": False,
-            "options": {
-                "temperature": config.temperature,
-                "num_predict": config.max_tokens,
-            },
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
         },
         timeout=120,
     )
     resp.raise_for_status()
-    return resp.json()["message"]["content"]
+    return resp.json()["choices"][0]["message"]["content"]
 
 
 def _call_vllm(config: LLMConfig, prompt: str, system: str) -> str:
@@ -334,8 +331,10 @@ class CodeTranslatorAgent:
 # ── Pipeline avec boucle de feedback ─────────────────────────────────────────
 
 
-def _generate_default_test(proc: ASTProcedure) -> str:
+def _generate_default_test(proc: ASTProcedure, actual_func_name: str | None = None) -> str:
     """Génère un test d'équivalence de base pour une procédure traduite."""
+    func_name = actual_func_name or proc.name
+
     params = []
     for p in proc.parameters:
         py_type = _wtype_to_python(p.wtype.value)
@@ -356,11 +355,20 @@ def _generate_default_test(proc: ASTProcedure) -> str:
     return (
         "from generated_code import *\n"
         "import pytest\n\n\n"
-        f"def test_{proc.name.lower()}_runs():\n"
+        f"def test_{func_name.lower()}_runs():\n"
         f"{assignments}\n"
-        f"    result = {proc.name}({call_args})\n"
+        f"    result = {func_name}({call_args})\n"
         f"    assert result is not None or result == 0 or result is None\n"
     )
+
+
+_RE_DEF = re.compile(r"^(?:async\s+)?def\s+(\w+)\s*\(", re.MULTILINE)
+
+
+def _detect_function_name(code: str) -> str | None:
+    """Détecte le nom de la première fonction définie dans le code généré."""
+    match = _RE_DEF.search(code)
+    return match.group(1) if match else None
 
 
 def _build_subgraph_context(
@@ -417,7 +425,7 @@ def translate_with_retry(
     runner = DockerSandboxRunner()
 
     context = _build_subgraph_context(proc, ast)
-    test_code = _generate_default_test(proc)
+    test_code = ""  # généré après la première traduction
 
     history: list[AttemptRecord] = []
     current_code = ""
@@ -436,6 +444,9 @@ def translate_with_retry(
                 source_proc=proc.name,
             )
             current_code = correction.generated_code
+
+        detected_name = _detect_function_name(current_code) or proc.name
+        test_code = _generate_default_test(proc, detected_name)
 
         sandbox_result = runner.run_tests(current_code, test_code)
         last_traceback = sandbox_result.stdout + sandbox_result.stderr

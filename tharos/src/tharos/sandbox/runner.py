@@ -49,9 +49,11 @@ class DockerSandboxRunner:
         try:
             container = self._client.containers.run(
                 self.image,
-                command=["-v", "--tb=short", f"tests/test_generated.py", f"--import-mode=importlib"],
+                command=["-v", "--tb=short", "--rootdir=/sandbox/run",
+                         "--override-ini=addopts=", "test_generated.py"],
                 volumes={str(work_dir): {"bind": "/sandbox/run", "mode": "rw"}},
                 working_dir="/sandbox/run",
+                environment={"PYTHONPATH": "/sandbox/run"},
                 network_mode="none",
                 detach=True,
                 remove=False,
