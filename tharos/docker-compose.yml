@@ -1,5 +1,5 @@
 services:
-  tharos:
+  tharos-engine:
     build:
       context: .
       dockerfile: Dockerfile
@@ -10,6 +10,8 @@ services:
       - THAROS_MODEL=qwen2.5-coder:7b
     devices:
       - /dev/nvidia0:/dev/nvidia0
+    networks:
+      - tharos-net
 
   sandbox:
     build:
@@ -17,5 +19,11 @@ services:
       dockerfile: Dockerfile.sandbox
     volumes:
       - ./workspace:/workspace
+    networks:
+      - tharos-net
     profiles:
       - test
+
+networks:
+  tharos-net:
+    driver: bridge
