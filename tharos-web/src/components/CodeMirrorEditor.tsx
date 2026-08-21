@@ -11,7 +11,7 @@ import {
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { python } from "@codemirror/lang-python";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
@@ -59,10 +59,20 @@ export default function CodeMirrorEditor({
         ...searchKeymap,
         ...completionKeymap,
       ]),
-      oneDark,
+      vscodeDark,
       EditorView.theme({
-        "&": { height: "100%", fontSize: "13px" },
-        ".cm-scroller": { fontFamily: "var(--font-geist-mono), monospace" },
+        "&": { height: "100%", fontSize: "13px", backgroundColor: "transparent" },
+        ".cm-scroller": {
+          fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+          lineHeight: "1.6",
+        },
+        ".cm-gutters": {
+          backgroundColor: "transparent",
+          borderRight: "1px solid rgba(63,63,70,0.4)",
+          color: "#52525b",
+        },
+        ".cm-activeLine": { backgroundColor: "rgba(63,63,70,0.15)" },
+        ".cm-activeLineGutter": { backgroundColor: "rgba(63,63,70,0.15)" },
       }),
       EditorState.readOnly.of(readOnly),
       EditorView.editable.of(!readOnly),

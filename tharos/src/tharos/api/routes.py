@@ -4,7 +4,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 
 from tharos.api.schemas import (
     DetectRequest,
@@ -119,3 +119,80 @@ async def transpile_code(req: TranspileRequest) -> TranspileResponse:
     finally:
         import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.post("/parse-file", response_model=dict)
+async def parse_file(content: str, filename: str) -> dict:
+    """Analyse un fichier WinDev complet et retourne sa structure."""
+    from tharos.parsers.windev import WinDevParser
+    
+    try:
+        parser = WinDevParser()
+        
+        # Créer un fichier temporaire pour le parsing
+        import tempfile
+        tmp_dir = Path(tempfile.mkdtemp(prefix="tharos_parse_"))
+        tmp_file = tmp_dir / filename
+        
+        try:
+            tmp_file.write_text(content, encoding="utf-8")
+            
+            ast = parser.parse_file(tmp_file)
+            
+            # Préparer la réponse avec les détails de l'analyse
+            result = {
+                "filename": ast.filename,
+                "total_lines": ast.total_lines,
+                "global_variables": [
+                    {
+                        "name": var.name,
+                        "type": var.wtype.value,
+                        "is_global": var.is_global,
+                        "line": var.line
+                    }
+                    for var in ast.global_variables
+                ],
+                "procedures": [
+                    {
+                        "name": proc.name,
+                        "parameters": [
+                            {
+                                "name": param.name,
+                                "type": param.wtype.value
+                            }
+                            for param in proc.parameters
+                        ],
+                        "local_variables": [
+                            {
+                                "name": var.name,
+                                "type": var.wtype.value,
+                                "line": var.line
+                            }
+                            for var in proc.local_variables
+                        ],
+                        "start_line": proc.start_line,
+                        "end_line": proc.end_line,
+                        "has_return": proc.return_value is not None,
+                    }
+                    for proc in ast.procedures
+                ],
+                "hfsql_queries": [
+                    {
+                        "type": query.query_type.value,
+                        "target_table": query.target_table,
+                        "sql": query.raw_sql,
+                        "line": query.line,
+                    }
+                    for query in ast.hfsql_queries
+                ],
+                "dependencies": parser.get_dependencies(content),
+            }
+            
+            return result
+            
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

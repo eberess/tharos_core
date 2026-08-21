@@ -296,3 +296,20 @@ class WinDevParser(BaseParser):
             )
 
         return conditions
+
+    def get_dependencies(self, content: str) -> list[str]:
+        """Extrait les dépendances entre procédures (appels intra-fichier)."""
+        dependencies = set()
+        
+        # Rechercher les appels de fonctions dans toute le contenu
+        # Cette regex capture les appels de procédures comme "CalculerTVA(...)"
+        pattern = re.compile(r"(\w+)\s*\(", re.MULTILINE)
+        
+        for match in pattern.finditer(content):
+            func_name = match.group(1)
+            # Si le nom semble être une procédure (pas un mot réservé ou variable)
+            if func_name not in ['SI', 'SINON', 'ALORS', 'FIN', 'HExécuteRequêteSQL', 
+                                'HLitPremier', 'HAjoute', 'HFenDeHorsRequête']:
+                dependencies.add(func_name)
+        
+        return list(dependencies)
