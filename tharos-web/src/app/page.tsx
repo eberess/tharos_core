@@ -23,6 +23,8 @@ const SAMPLE_CODE = `PROCEDURE CalculerTVA(nMontantHT est un monétaire, sCodeTV
     RENVOYER nTVA
 `;
 
+const WINDEV_FILE_RE = /\.(wdw|wdg|wda)$/i;
+
 export default function Home() {
   const [sourceCode, setSourceCode] = useState(SAMPLE_CODE);
   const [generatedCode, setGeneratedCode] = useState("");
@@ -36,7 +38,8 @@ export default function Home() {
   const [maxAttempts, setMaxAttempts] = useState(3);
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParseFileResponse | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isParsing, setIsParsing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSourceChange = useCallback(async (code: string) => {
@@ -77,84 +80,55 @@ export default function Home() {
     }
   }, [sourceCode, procedureName, maxAttempts]);
 
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
+  const loadFile = useCallback(async (file: File) => {
+    if (!WINDEV_FILE_RE.test(file.name)) {
+      setError("Format invalide — choisissez un fichier WinDev (.wdw, .wdg ou .wda)");
+      return;
+    }
+
+    setIsParsing(true);
+    setError(null);
+
+    try {
+      const content = await file.text();
+      setSourceCode(content);
+
+      const parsed = await parseFile(file.name, content);
+      setParsedData(parsed);
       
-      // Check file extension
-      if (!file.name.match(/\.(wdw|wdg|wda)$/i)) {
-        setError("Veuillez sélectionner un fichier WinDev (.wdw, .wdg ou .wda)");
-        return;
+      // Show notification toast
+      if (parsed.procedures.length > 0) {
+        setError(`Fichier analysé : ${parsed.procedures.length} procédures détectées, ${parsed.hfsql_queries.length} requêtes HFSQL`);
       }
       
-      try {
-        const content = await file.text();
-        setSourceCode(content);
-        
-        // Parse the file
-        const parsed = await parseFile(file.name, content);
-        setParsedData(parsed);
-        
-        // Set procedure dropdown to first procedure
-        if (parsed.procedures.length > 0) {
-          setProcedureName(parsed.procedures[0].name);
-        }
-        
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Erreur lors de l'analyse du fichier");
+      if (parsed.procedures.length > 0) {
+        setProcedureName(parsed.procedures[0].name);
+        // Load the first procedure into source editor
+        // This would normally come from the procedures parsing
       }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Erreur lors de l'analyse du fichier"
+      );
+    } finally {
+      setIsParsing(false);
     }
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  const openFileSelector = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      
-      // Check file extension
-      if (!file.name.match(/\.(wdw|wdg|wda)$/i)) {
-        setError("Veuillez sélectionner un fichier WinDev (.wdw, .wdg ou .wda)");
-        return;
-      }
-      
-      try {
-        const content = await file.text();
-        setSourceCode(content);
-        
-        // Parse the file
-        const parsed = await parseFile(file.name, content);
-        setParsedData(parsed);
-        
-        // Set procedure dropdown to first procedure
-        if (parsed.procedures.length > 0) {
-          setProcedureName(parsed.procedures[0].name);
-        }
-        
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Erreur lors de l'analyse du fichier");
-      }
-    }
-  }, []);
+  const handleHeaderFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) void loadFile(file);
+    },
+    [loadFile]
+  );
 
   const handleSelectProcedure = useCallback((name: string) => {
     setProcedureName(name);
+    // In a real app, this would update the editor with the procedure content
+    // For now, we'll just log that user selected a procedure
+    console.log("Selected procedure:", name);
   }, []);
 
   const resetFile = useCallback(() => {
@@ -162,17 +136,31 @@ export default function Home() {
     setSourceCode(SAMPLE_CODE);
     setProcedureName("CalculerTVA");
     setError(null);
+    setGeneratedCode("");
   }, []);
 
-  // Set up global drag events
+  // Keyboard shortcut for toggling sidebar (Ctrl+B or Cmd+B)
   useEffect(() => {
-    const handleGlobalDragOver = (e: DragEvent) => {
-      e.preventDefault();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Ctrl+B or Cmd+B combination
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setSidebarOpen(!sidebarOpen);
+      }
     };
 
-    window.addEventListener('dragover', handleGlobalDragOver);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen]);
+
+  // Empêche le navigateur d'ouvrir le fichier si le drop a lieu hors zone.
+  useEffect(() => {
+    const prevent = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", prevent);
+    window.addEventListener("drop", prevent);
     return () => {
-      window.removeEventListener('dragover', handleGlobalDragOver);
+      window.removeEventListener("dragover", prevent);
+      window.removeEventListener("drop", prevent);
     };
   }, []);
 
@@ -184,6 +172,15 @@ export default function Home() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-base font-bold text-white shadow-lg shadow-indigo-500/20">
             T
           </div>
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-indigo-300"
+            title="Afficher l'inspecteur de projet"
+          >
+            <span className="material-symbols-rounded text-[20px] leading-none">
+              view_sidebar
+            </span>
+          </button>
           <div className="flex items-center gap-2">
             <span className="text-lg font-semibold tracking-tight text-zinc-100">
               THAROS
@@ -195,33 +192,28 @@ export default function Home() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {!parsedData && (
-            <>
-              <div className="relative">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept=".wdw,.wdg,.wda"
-                  className="hidden"
-                />
-                <button
-                  onClick={openFileSelector}
-                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-indigo-500 hover:bg-zinc-800/60 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
-                >
-                  <span className="material-symbols-rounded text-[16px] leading-none">
-                    file_upload
-                  </span>
-                  Importer un fichier
-                </button>
-              </div>
-            </>
-          )}
-          
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".wdw,.wdg,.wda"
+            onChange={handleHeaderFileChange}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isParsing}
+            className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-indigo-500 hover:bg-zinc-800/60 focus:outline-none focus:ring-1 focus:ring-ind-indigo-500/40 disabled:opacity-50"
+          >
+            <span className="material-symbols-rounded text-[16px] leading-none">
+              {isParsing ? "progress_activity" : "file_upload"}
+            </span>
+            {isParsing ? "Analyse…" : "Importer un fichier"}
+          </button>
+
           {parsedData && (
             <button
               onClick={resetFile}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-indigo-500 hover:bg-zinc-800/60 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 transition hover:border-indigo-500 hover:bg-zinc-800/60"
             >
               <span className="material-symbols-rounded text-[16px] leading-none">
                 refresh
@@ -229,7 +221,7 @@ export default function Home() {
               Nouveau fichier
             </button>
           )}
-          
+
           <div className="flex items-center gap-2">
             <label className="text-xs text-zinc-400">Procédure</label>
             <select
@@ -237,12 +229,13 @@ export default function Home() {
               onChange={(e) => setProcedureName(e.target.value)}
               className="w-48 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 transition focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
             >
-              {parsedData && parsedData.procedures.map((proc) => (
-                <option key={proc.name} value={proc.name}>
-                  {proc.name}
-                </option>
-              ))}
-              {!parsedData && (
+              {parsedData ? (
+                parsedData.procedures.map((proc) => (
+                  <option key={proc.name} value={proc.name}>
+                    {proc.name}
+                  </option>
+                ))
+              ) : (
                 <option value="CalculerTVA">CalculerTVA</option>
               )}
             </select>
@@ -286,61 +279,54 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main layout with sidebar */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - Project Metadata */}
-        {parsedData && (
-          <div className="w-80 border-r border-zinc-800 bg-zinc-950/80 p-4 overflow-y-auto">
-            <ProjectMetadata 
-              parsedData={parsedData} 
-              onSelectProcedure={handleSelectProcedure}
-              onFileLoad={() => {}}
-            />
-          </div>
-        )}
+      {/* Three-pane layout */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Left Panel: Project Explorer - 280px width */}
+        <div 
+          className={`flex h-full w-80 shrink-0 border-r border-zinc-800 bg-zinc-950 transition-all duration-200 ${sidebarOpen ? 'block' : 'hidden'}`}
+        >
+          <ProjectMetadata
+            parsedData={parsedData}
+            activeProcedureName={procedureName}
+            onSelectProcedure={handleSelectProcedure}
+            open={sidebarOpen}
+            onToggle={() => setSidebarOpen(!sidebarOpen)}
+          />
+        </div>
 
-        {/* Main content area */}
-        <div className="flex-1 flex flex-col">
-          {/* Editor container with drag & drop support */}
-          <div 
-            className="flex-1 overflow-hidden relative"
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-          >
-            {/* Drag overlay */}
-            {isDragging && !parsedData && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="rounded-xl border-2 border-dashed border-indigo-500/30 bg-indigo-950/30 p-8 text-center text-indigo-300">
-                  <span className="material-symbols-rounded text-[48px] leading-none mb-3">upload_file</span>
-                  <p className="text-lg font-medium">Déposez votre fichier WinDev ici</p>
-                  <p className="text-sm mt-2">Formats supportés : .wdw, .wdg, .wda</p>
-                </div>
-              </div>
-            )}
-
-            <section className="min-h-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm m-4">
-              <EditorPanel
-                sourceCode={sourceCode}
-                onSourceChange={handleSourceChange}
-                generatedCode={generatedCode}
-                detectedLanguage={detectedLanguage}
-                confidence={confidence}
-                matchedPatterns={matchedPatterns}
-              />
-            </section>
-          </div>
-
-          {/* Log panel */}
-          <section className="h-72 shrink-0 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm m-4">
-            <LogPanel
-              attempts={attempts}
-              isRunning={isRunning}
-              success={success}
+        {/* Middle Panel: Editor */}
+        <main className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+          <section className="min-h-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm">
+            <EditorPanel
+              sourceCode={sourceCode}
+              onSourceChange={handleSourceChange}
+              generatedCode={generatedCode}
+              detectedLanguage={detectedLanguage}
+              confidence={confidence}
+              matchedPatterns={matchedPatterns}
+              onImportFile={loadFile}
             />
           </section>
-        </div>
+
+          {/* Bottom Panel: Console/Output */}
+          <section className="h-72 shrink-0 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm">
+            <LogPanel attempts={attempts} isRunning={isRunning} success={success} />
+          </section>
+        </main>
       </div>
+
+      {/* Floating toggle button when sidebar is closed */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="fixed left-0 top-1/2 flex h-8 w-6 items-center justify-center rounded-r-md border border-zinc-700 bg-zinc-900/80 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-indigo-300"
+          title="Ouvrir l'inspecteur de projet"
+        >
+          <span className="material-symbols-rounded text-[16px] leading-none">
+            chevron_right
+          </span>
+        </button>
+      )}
     </div>
   );
 }
