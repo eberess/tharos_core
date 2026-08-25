@@ -1,5 +1,7 @@
 """Construit le graphe de dépendance entre fichiers WinDev."""
 
+import re
+
 import networkx as nx
 from collections import deque
 from pathlib import Path
@@ -40,13 +42,18 @@ class GraphBuilder:
                     
                 dependencies = analyzer.analyze_file_dependencies(file_node)
                 
-                # Ajouter des arcs au graphe pour chaque dépendance
+                # Ajouter des arcs au graphe pour chaque dépendance.
+                # Sémantique : edge A -> B  ⇔  « A dépend de B »
+                # => l'appelant (file_path) pointe vers le fichier qui définit
+                # la procédure (other_file). Ainsi nx.topological_sort place
+                # les dépendances EN PREMIER (ordre de transpilation valide).
                 for dep in dependencies:
                     dep_name = dep["name"]
                     # Rechercher si cette dépendance est dans notre projet
                     for other_file in file_paths:
                         if other_file != file_path and self._contains_procedure(other_file, dep_name):
-                            self.graph.add_edge(file_path, other_file)
+                            self.graph.add_edge(other_file, file_path)
+                            break
                             
             except Exception as e:
                 print(f"Erreur lors de la construction du graphe pour {file_path}: {e}")
@@ -90,9 +97,10 @@ class GraphBuilder:
             # Calculer l'ordre topologique
             topo_order = list(nx.topological_sort(self.graph))
             return topo_order
-        except nx.NetworkXError:
-            # Si le graphe a des cycles, effectuer un tri différent
-            return file_paths
+        except nx.NetworkXException:
+            # Cycle détecté : repli déterministe sur l'ordre de déclaration.
+            # (NetworkXUnfeasible hérite de NetworkXException, pas de NetworkXError.)
+            return list(file_paths)
     
     def get_dependencies(self, file_path: str) -> List[str]:
         """

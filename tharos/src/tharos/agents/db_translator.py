@@ -24,24 +24,17 @@ class HFSQLToSQLAlchemyTranslator:
     def translate_file_queries(self, file_content: str, file_name: str) -> Dict[str, TranslationResult]:
         """
         Traduit toutes les requêtes HFSQL dans un fichier.
-        
-        Args:
-            file_content (str): Contenu du fichier WinDev
-            file_name (str): Nom du fichier
-            
-        Returns:
-            Dict[str, TranslationResult]: Dictionnaire des traductions
+
+        Extraction autonome par regex (HAjoute, HModifie, HLitPremier,
+        HLitRecherchePremier, HExécuteRequêteSQL) — aucun parser AST requis.
         """
-        translations = {}
-        
-        # Rechercher les requêtes HFSQL
-        queries = self._extract_hfsql_queries(file_content)
-        
-        for query in queries:
+        translations: Dict[str, TranslationResult] = {}
+
+        for query in self._extract_hfsql_queries(file_content):
             result = self.translate_query(query)
             if result:
-                translations[query] = result
-                
+                translations[result.original_query] = result
+
         return translations
     
     def _extract_hfsql_queries(self, content: str) -> List[str]:
@@ -53,7 +46,7 @@ class HFSQLToSQLAlchemyTranslator:
             r'HAjoute\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)',
             r'HModifie\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)', 
             r'HLitPremier\s*\(\s*["\']([^"\']+)["\']\s*\)',
-            r'HLitRecherchePremier\s*\(\s*["\']([^"\']+)["\']\s*,.*?\)',
+            r'HLitRecherchePremier\s*\([^()]*\)',   # args libres : (Table, Champ, Valeur)
             r'HExécuteRequêteSQL\s*\(\s*["\']([^"\']+)["\']\s*(?:,.*?)*\)'
         ]
         

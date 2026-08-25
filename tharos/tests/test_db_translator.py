@@ -33,8 +33,9 @@ END
     
     # Analyser le contenu
     parser = WinDevParser()
-    ast = parser.parse_file_from_string(content, "test.wdw")
-    
+    ast = parser.parse_content(content, "test.wdw")
+    assert len(ast.procedures) >= 1
+
     # Traduire les requêtes
     translations = translator.translate_file_queries(content, "test.wdw")
     

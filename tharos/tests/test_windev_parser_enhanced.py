@@ -198,7 +198,7 @@ def test_complex_parser():
         assert procedure_names == expected_names
         
         # Vérification des variables globales
-        assert len(ast.global_variables) == 7
+        assert len(ast.global_variables) == 9
         
         # Vérification des types de variables globales
         global_types = [v.wtype for v in ast.global_variables]
@@ -208,8 +208,10 @@ def test_complex_parser():
             VariableType.MONETAIRE,  # nTotalTTC
             VariableType.DATE,       # dDateFacture
             VariableType.BOOLEEN,    # bFactureValidee
+            VariableType.COMPLEXE,   # tabLignesFacture (tableau de structures)
             VariableType.CHAINE,     # sCodeErreur
-            VariableType.ENTIER      # nCodeRetour
+            VariableType.ENTIER,     # nCodeRetour
+            VariableType.BOOLEEN,    # bVerificationOK
         ]
         assert global_types == expected_types
         

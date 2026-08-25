@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml uv.lock ./
 COPY src/ src/
+COPY tests/ tests/
 
 RUN pip install --no-cache-dir uv && uv sync --frozen
 

@@ -12,6 +12,7 @@ from tharos.api.schemas import (
     DetectedLanguage,
     GenerateUIRequest,
     GenerateUIResponse,
+    ParseFileRequest,
     TranspileRequest,
     TranspileResponse,
     AttemptInfo,
@@ -126,13 +127,15 @@ async def transpile_code(req: TranspileRequest) -> TranspileResponse:
 
 
 @router.post("/parse-file", response_model=dict)
-async def parse_file(content: str, filename: str) -> dict:
+async def parse_file(req: ParseFileRequest) -> dict:
     """Analyse un fichier WinDev complet et retourne sa structure."""
     from tharos.parsers.windev import WinDevParser
-    
+
+    filename, content = req.filename, req.content
+
     try:
         parser = WinDevParser()
-        
+
         # Créer un fichier temporaire pour le parsing
         import tempfile
         tmp_dir = Path(tempfile.mkdtemp(prefix="tharos_parse_"))

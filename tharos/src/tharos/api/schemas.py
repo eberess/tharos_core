@@ -52,6 +52,14 @@ class AttemptInfo(BaseModel):
     logs: str = ""
 
 
+# ── Parse-file ───────────────────────────────────────────────────────────────
+
+
+class ParseFileRequest(BaseModel):
+    filename: str = Field(..., description="Nom du fichier WinDev")
+    content: str = Field(..., description="Contenu WLanguage du fichier")
+
+
 # ── Génération UI (v0.4) ─────────────────────────────────────────────────────
 
 

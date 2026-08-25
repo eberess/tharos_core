@@ -132,6 +132,10 @@ class WinDevParser(BaseParser):
 
     def parse_file(self, filepath: Path) -> ASTModel:
         content = filepath.read_text(encoding="utf-8", errors="replace")
+        return self.parse_content(content, filename=filepath.name)
+
+    def parse_content(self, content: str, filename: str = "file.wdw") -> ASTModel:
+        """Parse un contenu WLanguage déjà chargé en mémoire."""
         lines = content.split("\n")
 
         # Extraire les variables globales (avant toute procédure)
@@ -147,7 +151,7 @@ class WinDevParser(BaseParser):
         conditions = self._extract_conditions(content, lines)
 
         return ASTModel(
-            filename=filepath.name,
+            filename=filename,
             global_variables=global_vars,
             procedures=procedures,
             hfsql_queries=queries,

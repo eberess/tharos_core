@@ -34,9 +34,10 @@ END
         parser = WinDevParser()
         deps = parser.get_dependencies(sample_content)
         
-        # Le parser doit détecter les dépendances
+        # Le parser détecte les appels de procédures (les fonctions HFSQL
+        # natives sont volontairement exclues des dépendances internes).
         assert "CalculerTVA" in deps
-        assert "HExécuteRequêteSQL" in deps
+        assert "ValiderFacture" in deps
         
         # Parser le fichier complet
         import tempfile
@@ -59,3 +60,28 @@ END
             
         finally:
             os.unlink(temp_path)
+
+
+def test_parse_file_http_roundtrip():
+    """Le endpoint /parse-file accepte un corps JSON {filename, content}."""
+    from fastapi.testclient import TestClient
+    from tharos.api.main import app
+
+    client = TestClient(app)
+    res = client.post(
+        "/api/v1/parse-file",
+        json={
+            "filename": "facture.wdw",
+            "content": (
+                "sNomClient est une chaîne\n"
+                "PROCEDURE CalculerTVA(nMontantHT est un monétaire) LOCAL\n"
+                "    RENVOYER nMontantHT * 0.20\n"
+            ),
+        },
+    )
+
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["filename"] == "facture.wdw"
+    assert [p["name"] for p in data["procedures"]] == ["CalculerTVA"]
+    assert [v["name"] for v in data["global_variables"]] == ["sNomClient"]

@@ -38,9 +38,9 @@ END
         
         # Vérifier que les dépendances sont détectées
         assert len(dependencies) >= 1
-        
+
         # Vérifier qu'on a au moins un appel vers Proc2
-        proc2_calls = [dep for dep in dependencies if "Proc2" in dep.target_file]
+        proc2_calls = [dep for dep in dependencies if dep["name"] == "Proc2"]
         assert len(proc2_calls) >= 1
         
     finally:

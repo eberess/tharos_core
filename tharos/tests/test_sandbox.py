@@ -43,13 +43,15 @@ def _make_container_mock(exit_code: int, out_text: str, err_text: str) -> MagicM
 
 
 class TestDockerSandboxRunner:
+    """Le harnais v0.5 : create() + put_archive() + start(), sans bind mount hôte."""
+
     @patch("tharos.sandbox.runner.docker")
     def test_passing_code(self, mock_docker: MagicMock) -> None:
         mock_client = MagicMock()
         mock_docker.from_env.return_value = mock_client
 
         container = _make_container_mock(0, "1 passed\n", "")
-        mock_client.containers.run.return_value = container
+        mock_client.containers.create.return_value = container
 
         runner = DockerSandboxRunner(image="test:latest")
         result = runner.run_tests(VALID_CODE, VALID_TEST)
@@ -57,10 +59,12 @@ class TestDockerSandboxRunner:
         assert result.passed is True
         assert result.exit_code == 0
         assert result.container_id == "abc1234"
-        mock_client.containers.run.assert_called_once()
 
-        call_kwargs = mock_client.containers.run.call_args
-        assert call_kwargs.kwargs["network_mode"] == "none"
+        # Conteneur créé avec l'image demandée, réseau coupé, workdir sandbox
+        create_kwargs = mock_client.containers.create.call_args
+        assert create_kwargs.args[0] == "test:latest"
+        assert create_kwargs.kwargs["network_mode"] == "none"
+        assert create_kwargs.kwargs["working_dir"] == "/sandbox/run"
 
     @patch("tharos.sandbox.runner.docker")
     def test_failing_code(self, mock_docker: MagicMock) -> None:
@@ -72,7 +76,7 @@ class TestDockerSandboxRunner:
             "FAILED tests/test_generated.py::test_add\n",
             "AssertionError: assert False\n",
         )
-        mock_client.containers.run.return_value = container
+        mock_client.containers.create.return_value = container
 
         runner = DockerSandboxRunner(image="test:latest")
         result = runner.run_tests(FAILING_CODE, FAILING_TEST)
@@ -88,7 +92,7 @@ class TestDockerSandboxRunner:
 
         stdout = "1 passed\nTOTAL                    10      2    80%"
         container = _make_container_mock(0, stdout, "")
-        mock_client.containers.run.return_value = container
+        mock_client.containers.create.return_value = container
 
         runner = DockerSandboxRunner()
         result = runner.run_tests(VALID_CODE, VALID_TEST)
@@ -102,7 +106,7 @@ class TestDockerSandboxRunner:
         mock_docker.from_env.return_value = mock_client
 
         container = _make_container_mock(0, "passed", "")
-        mock_client.containers.run.return_value = container
+        mock_client.containers.create.return_value = container
 
         runner = DockerSandboxRunner()
         runner.run_tests(VALID_CODE, VALID_TEST)
@@ -110,22 +114,30 @@ class TestDockerSandboxRunner:
         container.remove.assert_called_once_with(force=True)
 
     @patch("tharos.sandbox.runner.docker")
-    def test_volume_mount(self, mock_docker: MagicMock) -> None:
+    def test_no_bind_mounts_injected_via_archive(self, mock_docker: MagicMock) -> None:
+        """Aucun volume hôte : les fichiers sont injectés via put_archive."""
         mock_client = MagicMock()
         mock_docker.from_env.return_value = mock_client
 
         container = _make_container_mock(0, "1 passed", "")
-        mock_client.containers.run.return_value = container
+        mock_client.containers.create.return_value = container
 
         runner = DockerSandboxRunner()
         runner.run_tests(VALID_CODE, VALID_TEST)
 
-        call_kwargs = mock_client.containers.run.call_args
-        volumes = call_kwargs.kwargs.get("volumes", {})
-        assert len(volumes) == 1
+        create_kwargs = mock_client.containers.create.call_args.kwargs
+        assert not create_kwargs.get("volumes"), "aucun bind mount ne doit être utilisé"
 
-        mount_path = list(volumes.keys())[0]
-        assert Path(mount_path).exists() is False
+        # L'archive contient bien le code généré + son test pytest
+        put_args = container.put_archive.call_args
+        assert put_args.args[0] == "/sandbox"
+        import io
+        import tarfile as _tarfile
+
+        archive_bytes = put_args.args[1]
+        with _tarfile.open(fileobj=io.BytesIO(archive_bytes)) as tar:
+            names = set(tar.getnames())
+        assert {"run", "run/generated_code.py", "run/test_generated.py"} <= names
 
 
 class TestRmtree:
