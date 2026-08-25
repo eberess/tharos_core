@@ -14,6 +14,8 @@ from tharos.api.schemas import (
     TranspileResponse,
     AttemptInfo,
 )
+from tharos.graph.dependency_analyzer import DependencyAnalyzer
+from tharos.agents.db_translator import HFSQLToSQLAlchemyTranslator
 
 router = APIRouter()
 
@@ -194,5 +196,67 @@ async def parse_file(content: str, filename: str) -> dict:
             import shutil
             shutil.rmtree(tmp_dir, ignore_errors=True)
             
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/dependency-graph", response_model=dict)
+async def generate_dependency_graph(files: list) -> dict:
+    """Génère un graphe de dépendance à partir d'une liste de fichiers."""
+    try:
+        analyzer = DependencyAnalyzer()
+        
+        # Convertir les fichiers en chemins
+        file_paths = [Path(f["filename"]) for f in files]
+        
+        # Analyser les dépendances
+        dependencies = analyzer.analyze_project_dependencies(file_paths)
+        
+        # Construire le graphe orienté
+        from tharos.graph.graph_builder import GraphBuilder
+        
+        graph_builder = GraphBuilder()
+        graph = graph_builder.build_dependency_graph([str(f) for f in file_paths])
+        
+        # Retourner l'ordre de transpilation
+        transpilation_order = graph_builder.get_transpilation_order([str(f) for f in file_paths])
+        
+        result = {
+            "dependencies": dependencies,
+            "transpilation_order": transpilation_order,
+            "has_cycles": graph_builder.has_cycle(),
+            "cycles": graph_builder.get_cycles()
+        }
+        
+        return result
+        
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/translate-db-queries", response_model=dict)
+async def translate_database_queries(content: str, filename: str) -> dict:
+    """Traduit les requêtes HFSQL en SQLAlchemy 2.0."""
+    try:
+        translator = HFSQLToSQLAlchemyTranslator()
+        
+        # Traduire les requêtes
+        translations = translator.translate_file_queries(content, filename)
+        
+        result = {
+            "original_filename": filename,
+            "translations": {
+                original_query: {
+                    "translated_code": trans_result.translated_code,
+                    "original_query": trans_result.original_query,
+                    "is_raw_sql": trans_result.is_raw_sql,
+                    "warnings": trans_result.warnings or []
+                }
+                for original_query, trans_result in translations.items()
+            }
+        }
+        
+        return result
+        
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
