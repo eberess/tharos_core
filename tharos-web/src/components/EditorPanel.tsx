@@ -2,7 +2,9 @@
 
 import { useState, useCallback, useRef } from "react";
 import CodeMirrorEditor from "./CodeMirrorEditor";
+import UiPreview from "./UiPreview";
 import { detectLanguage } from "@/lib/api";
+import type { UIWindowStructure } from "@/types";
 
 interface EditorPanelProps {
   sourceCode: string;
@@ -12,6 +14,14 @@ interface EditorPanelProps {
   confidence: number;
   matchedPatterns: string[];
   onImportFile?: (file: File) => void;
+  /* v0.4 — Vue composant React */
+  reactView: boolean;
+  onToggleReactView: () => void;
+  generatedReact: { component_name: string; tsx_code: string } | null;
+  uiStructure: UIWindowStructure | null;
+  isGeneratingReact: boolean;
+  reactError: string | null;
+  onRegenerateReact: () => void;
 }
 
 export default function EditorPanel({
@@ -22,6 +32,13 @@ export default function EditorPanel({
   confidence,
   matchedPatterns,
   onImportFile,
+  reactView,
+  onToggleReactView,
+  generatedReact,
+  uiStructure,
+  isGeneratingReact,
+  reactError,
+  onRegenerateReact,
 }: EditorPanelProps) {
   const [split, setSplit] = useState(50);
   const [dragging, setDragging] = useState(false);
@@ -55,15 +72,16 @@ export default function EditorPanel({
 
   const onMouseUp = useCallback(() => setDragging(false), []);
 
+  const currentOutput = reactView ? (generatedReact?.tsx_code ?? "") : generatedCode;
+
   const handleCopy = useCallback(async () => {
-    if (!generatedCode) return;
+    if (!currentOutput) return;
     try {
-      await navigator.clipboard.writeText(generatedCode);
-      // Note: copying functionality would be implemented in actual app
+      await navigator.clipboard.writeText(currentOutput);
     } catch {
       /* clipboard unavailable */
     }
-  }, [generatedCode]);
+  }, [currentOutput]);
 
   const openFileSelector = useCallback(() => {
     fileInputRef.current?.click();
@@ -188,30 +206,116 @@ export default function EditorPanel({
         <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
       </div>
 
-      {/* Right: Generated */}
+      {/* Right: Generated — Vue Code Python / Vue Composant React (v0.4) */}
       <div className="flex h-full flex-1 flex-col overflow-hidden">
-        <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900/60 px-4">
-          <span className="text-xs font-medium text-zinc-300">
-            Code Python Transpilé
+        <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-zinc-800 bg-zinc-900/60 px-3">
+          <span className="truncate text-xs font-medium text-zinc-300">
+            {reactView
+              ? generatedReact
+                ? `Composant React : ${generatedReact.component_name}.tsx`
+                : "Vue Composant React"
+              : "Code Python Transpilé"}
           </span>
-          <button
-            onClick={handleCopy}
-            disabled={!generatedCode}
-            className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-700/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <span className="material-symbols-rounded text-[16px] leading-none">
-              {generatedCode ? "content_copy" : "check"}
-            </span>
-            Copier
-          </button>
+
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Bascule de vue */}
+            <div className="flex items-center overflow-hidden rounded-md border border-zinc-700">
+              <button
+                onClick={onToggleReactView}
+                disabled={!reactView}
+                title="Afficher le code Python transpilé"
+                className={`px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                  !reactView
+                    ? "bg-indigo-500/20 text-indigo-300"
+                    : "bg-transparent text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                }`}
+              >
+                Python
+              </button>
+              <button
+                onClick={onToggleReactView}
+                disabled={reactView}
+                title="Générer et afficher le composant React (IHM WinDev)"
+                className={`border-l border-zinc-700 px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                  reactView
+                    ? "bg-indigo-500/20 text-indigo-300"
+                    : "bg-transparent text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                }`}
+              >
+                React
+              </button>
+            </div>
+
+            {reactView && (
+              <button
+                onClick={onRegenerateReact}
+                disabled={isGeneratingReact}
+                title="Régénérer le composant depuis le code source courant"
+                className="inline-flex items-center rounded-md border border-zinc-700 bg-zinc-800/60 p-1 text-zinc-400 transition hover:border-indigo-500 hover:text-indigo-300 disabled:opacity-40"
+              >
+                <span className={`material-symbols-rounded text-[15px] leading-none ${isGeneratingReact ? "animate-spin" : ""}`}>
+                  refresh
+                </span>
+              </button>
+            )}
+
+            <button
+              onClick={handleCopy}
+              disabled={!currentOutput}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800/60 px-2.5 py-1 text-[11px] font-medium text-zinc-300 transition hover:border-zinc-600 hover:bg-zinc-700/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span className="material-symbols-rounded text-[16px] leading-none">
+                content_copy
+              </span>
+              Copier
+            </button>
+          </div>
         </div>
-        <div className="flex-1 overflow-hidden">
-          <CodeMirrorEditor
-            value={generatedCode}
-            readOnly
-            language="python"
-          />
-        </div>
+
+        {!reactView ? (
+          /* ── Vue Code Python ── */
+          <div className="flex-1 overflow-hidden">
+            <CodeMirrorEditor value={generatedCode} readOnly language="python" />
+          </div>
+        ) : (
+          /* ── Vue Composant React ── */
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {isGeneratingReact ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-zinc-500">
+                  <span className="material-symbols-rounded animate-spin text-[28px] text-indigo-400">
+                    progress_activity
+                  </span>
+                  Transpilation IHM en cours…
+                </div>
+              ) : reactError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-xs text-red-400">
+                  <span className="material-symbols-rounded text-[26px]">error</span>
+                  {reactError}
+                </div>
+              ) : generatedReact ? (
+                <CodeMirrorEditor
+                  value={generatedReact.tsx_code}
+                  readOnly
+                  language="plain"
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-xs text-zinc-500">
+                  <span className="material-symbols-rounded text-[30px] text-zinc-600">
+                    web
+                  </span>
+                  Basculez sur « React » pour transpiler la fenêtre WinDev
+                  en composant React / shadcn-ui.
+                </div>
+              )}
+            </div>
+
+            {/* Aperçu visuel du composant généré */}
+            <div className="h-56 shrink-0 border-t border-zinc-800 bg-zinc-950/60">
+              <UiPreview structure={uiStructure} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

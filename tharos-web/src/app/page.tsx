@@ -4,8 +4,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import EditorPanel from "@/components/EditorPanel";
 import LogPanel from "@/components/LogPanel";
 import ProjectMetadata from "@/components/ProjectMetadata";
-import { detectLanguage, transpileCode, parseFile } from "@/lib/api";
-import type { AttemptInfo, ParseFileResponse } from "@/types";
+import { detectLanguage, transpileCode, parseFile, generateUi } from "@/lib/api";
+import type { AttemptInfo, ParseFileResponse, UIWindowStructure } from "@/types";
 
 const SAMPLE_CODE = `PROCEDURE CalculerTVA(nMontantHT est un monétaire, sCodeTVA est une chaîne) LOCAL
     nTVA est un monétaire
@@ -36,10 +36,20 @@ export default function Home() {
   const [success, setSuccess] = useState<boolean | null>(null);
   const [procedureName, setProcedureName] = useState("CalculerTVA");
   const [maxAttempts, setMaxAttempts] = useState(3);
-  const [error, setError] = useState<string | null>(null);
+  const [loadedFiles, setLoadedFiles] = useState<{ filename: string; content: string }[] | null>(null);
   const [parsedData, setParsedData] = useState<ParseFileResponse | null>(null);
+  const [currentFilename, setCurrentFilename] = useState<string | null>(null);
+  const [currentContent, setCurrentContent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [files, setFiles] = useState<{ filename: string; content: string }[] | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isParsing, setIsParsing] = useState(false);
+  /* v0.4 — Vue composant React */
+  const [reactView, setReactView] = useState(false);
+  const [generatedReact, setGeneratedReact] = useState<{ component_name: string; tsx_code: string } | null>(null);
+  const [uiStructure, setUiStructure] = useState<UIWindowStructure | null>(null);
+  const [isGeneratingReact, setIsGeneratingReact] = useState(false);
+  const [reactError, setReactError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSourceChange = useCallback(async (code: string) => {
@@ -95,7 +105,12 @@ export default function Home() {
 
       const parsed = await parseFile(file.name, content);
       setParsedData(parsed);
+      setCurrentFilename(file.name);
+      setCurrentContent(content);
       
+      // Update files list with the loaded file
+      setLoadedFiles([{ filename: file.name, content }]);
+
       // Show notification toast
       if (parsed.procedures.length > 0) {
         setError(`Fichier analysé : ${parsed.procedures.length} procédures détectées, ${parsed.hfsql_queries.length} requêtes HFSQL`);
@@ -137,7 +152,49 @@ export default function Home() {
     setProcedureName("CalculerTVA");
     setError(null);
     setGeneratedCode("");
+    setCurrentFilename(null);
+    setCurrentContent(null);
+    setLoadedFiles(null);
+    setGeneratedReact(null);
+    setUiStructure(null);
+    setReactError(null);
   }, []);
+
+  /* v0.4 — Génération du composant React (IHM) via /api/v1/generate-ui */
+  const runGenerateReact = useCallback(async () => {
+    setIsGeneratingReact(true);
+    setReactError(null);
+    try {
+      const res = await generateUi(currentFilename ?? "fenetre.wdw", sourceCode);
+      if (res.success) {
+        setGeneratedReact({ component_name: res.component_name, tsx_code: res.tsx_code });
+        setUiStructure(res.ui_structure);
+      } else {
+        setReactError(res.error ?? "Échec de la génération du composant React");
+      }
+    } catch (e) {
+      setReactError(e instanceof Error ? e.message : "Erreur réseau lors de la génération UI");
+    } finally {
+      setIsGeneratingReact(false);
+    }
+  }, [currentFilename, sourceCode]);
+
+  const handleToggleReactView = useCallback(() => setReactView((v) => !v), []);
+
+  // Invalide le cache : l'effet ci-dessous relance la génération.
+  const handleRegenerateReact = useCallback(() => {
+    setGeneratedReact(null);
+    setUiStructure(null);
+  }, []);
+
+  useEffect(() => {
+    if (reactView && !generatedReact && !isGeneratingReact) {
+      void runGenerateReact();
+    }
+    // Dépendances volontairement restreintes : pas de re-génération à chaque frappe,
+    // le bouton « Régénérer » pilote explicitement le rafraîchissement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reactView, generatedReact]);
 
   // Keyboard shortcut for toggling sidebar (Ctrl+B or Cmd+B)
   useEffect(() => {
@@ -291,6 +348,9 @@ export default function Home() {
             onSelectProcedure={handleSelectProcedure}
             open={sidebarOpen}
             onToggle={() => setSidebarOpen(!sidebarOpen)}
+            files={loadedFiles}
+            currentFilename={currentFilename}
+            currentContent={currentContent}
           />
         </div>
 
@@ -305,6 +365,13 @@ export default function Home() {
               confidence={confidence}
               matchedPatterns={matchedPatterns}
               onImportFile={loadFile}
+              reactView={reactView}
+              onToggleReactView={handleToggleReactView}
+              generatedReact={generatedReact}
+              uiStructure={uiStructure}
+              isGeneratingReact={isGeneratingReact}
+              reactError={reactError}
+              onRegenerateReact={handleRegenerateReact}
             />
           </section>
 

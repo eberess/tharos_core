@@ -10,6 +10,8 @@ from tharos.api.schemas import (
     DetectRequest,
     DetectResponse,
     DetectedLanguage,
+    GenerateUIRequest,
+    GenerateUIResponse,
     TranspileRequest,
     TranspileResponse,
     AttemptInfo,
@@ -258,5 +260,28 @@ async def translate_database_queries(content: str, filename: str) -> dict:
         
         return result
         
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/generate-ui", response_model=GenerateUIResponse)
+async def generate_ui(req: GenerateUIRequest) -> GenerateUIResponse:
+    """Transpile une fenêtre WinDev (.wdw) en composant React/TSX (v0.4)."""
+    from tharos.parsers.ui_parser import UIParser
+    from tharos.agents.react_generator import ReactComponentGenerator
+
+    try:
+        window = UIParser().parse_content(req.content, filename=req.filename)
+        result = ReactComponentGenerator().generate(
+            window, component_name=req.component_name
+        )
+        return GenerateUIResponse(
+            success=result.success,
+            component_name=result.component_name,
+            tsx_code=result.tsx_code,
+            ui_structure=window.model_dump(),
+            warnings=result.warnings,
+            error=result.error,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

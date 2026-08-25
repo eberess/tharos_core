@@ -54,3 +54,67 @@ export interface ParseFileResponse {
   }>;
   dependencies: string[];
 }
+
+// New types for v0.3
+export interface DependencyGraphResponse {
+  dependencies: Record<string, any>;
+  transpilation_order: string[];
+  has_cycles: boolean;
+  cycles: string[][];
+}
+
+export interface TranslationResult {
+  original_query: string;
+  translated_code: string;
+  is_raw_sql: boolean;
+  warnings?: string[];
+}
+
+export interface DbTranslationResponse {
+  original_filename: string;
+  translations: Record<string, TranslationResult>;
+}
+
+// ── v0.4 : Génération IHM (WinDev → React/shadcn) ───────────────────────────
+
+export type UIControlType =
+  | "input"
+  | "button"
+  | "table"
+  | "label"
+  | "checkbox"
+  | "select";
+
+export interface UIControl {
+  name: string;
+  control_type: UIControlType;
+  label: string | null;
+  wtype: string | null;
+  default_value: string | null;
+  columns: string[];
+  line: number;
+}
+
+export interface UIEvent {
+  event_name: string;
+  control_name: string;
+  procedure_name: string;
+  body_lines: string[];
+}
+
+export interface UIWindowStructure {
+  filename: string;
+  title: string | null;
+  controls: UIControl[];
+  events: UIEvent[];
+  total_lines: number;
+}
+
+export interface GenerateUIResponse {
+  success: boolean;
+  component_name: string;
+  tsx_code: string;
+  ui_structure: UIWindowStructure;
+  warnings: string[];
+  error: string | null;
+}

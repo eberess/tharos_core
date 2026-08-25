@@ -66,3 +66,52 @@ export async function parseFile(
   }
   return res.json();
 }
+
+// New endpoints for v0.3
+export async function getDependencyGraph(files: Array<{filename: string, content: string}>): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/v1/dependency-graph`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ files }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Dependency graph failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function translateDbQueries(filename: string, content: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/v1/translate-db-queries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename, content }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Translation failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// v0.4 — Transpilation IHM : fenêtre WinDev → composant React/shadcn
+export async function generateUi(
+  filename: string,
+  content: string,
+  componentName?: string
+): Promise<import("@/types").GenerateUIResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/generate-ui`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename,
+      content,
+      ...(componentName ? { component_name: componentName } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `UI generation failed: ${res.status}`);
+  }
+  return res.json();
+}

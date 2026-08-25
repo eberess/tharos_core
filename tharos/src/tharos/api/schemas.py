@@ -50,3 +50,23 @@ class AttemptInfo(BaseModel):
     passed: bool
     exit_code: int
     logs: str = ""
+
+
+# ── Génération UI (v0.4) ─────────────────────────────────────────────────────
+
+
+class GenerateUIRequest(BaseModel):
+    filename: str = Field(..., description="Nom du fichier fenêtre (.wdw)")
+    content: str = Field(..., description="Contenu WLanguage de la fenêtre")
+    component_name: str | None = Field(
+        default=None, description="Nom du composant React (dérivé du fichier sinon)"
+    )
+
+
+class GenerateUIResponse(BaseModel):
+    success: bool
+    component_name: str
+    tsx_code: str = ""
+    ui_structure: dict = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None

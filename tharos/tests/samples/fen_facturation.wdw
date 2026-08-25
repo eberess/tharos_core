@@ -1,0 +1,30 @@
+// ── Fenêtre Facturation Client — Tharos v0.4 (démo IHM) ──
+FenFacturation..Titre = "Facturation client"
+
+LIB_TitreEnTete = "Nouvelle facture"
+SAI_NumClient est une chaîne
+SAI_NomClient est une chaîne
+SAI_MontantHT est un monétaire
+INT_AcomptePaye est un booléen
+COMBO_ModePaiement est une chaîne
+
+TABLE_Lignes..Libellé = "Lignes de commande"
+TABLE_Lignes..Colonne[1] = "Référence"
+TABLE_Lignes..Colonne[2] = "Désignation"
+TABLE_Lignes..Colonne[3] = "Quantité"
+TABLE_Lignes..Colonne[4] = "Prix unitaire"
+
+BTN_Enregistrer..Libellé = "Enregistrer la facture"
+BTN_Annuler..Libellé = "Annuler"
+
+PROCEDURE BTN_Enregistrer_Clic()
+    // Persistance via HFSQL → SQLAlchemy côté API
+    HAjoute(Factures)
+    Info("Facture enregistrée")
+    Ferme()
+
+PROCEDURE BTN_Annuler_Clic()
+    Ferme()
+
+PROCEDURE SAI_NumClient_Init()
+    HLitRecherchePremier(Client, NumClient, 105)

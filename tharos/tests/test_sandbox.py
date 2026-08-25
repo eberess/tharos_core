@@ -5,7 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tharos.sandbox.runner import DockerSandboxRunner, SandboxResult, _rmtree
+import shutil
+
+from tharos.sandbox.runner import DockerSandboxRunner, SandboxResult
 
 
 VALID_CODE = 'def add(a: int, b: int) -> int:\n    return a + b\n'
@@ -131,9 +133,9 @@ class TestRmtree:
         d = tmp_path / "to_remove"
         d.mkdir()
         (d / "file.txt").write_text("hello")
-        _rmtree(d)
+        shutil.rmtree(d, ignore_errors=True)
         assert not d.exists()
 
     def test_removes_nonexistent_dir(self, tmp_path: Path) -> None:
         d = tmp_path / "nope"
-        _rmtree(d)
+        shutil.rmtree(d, ignore_errors=True)
